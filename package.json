@@ -1,0 +1,16 @@
+{
+  "name": "stellar-white-belt",
+  "version": "1.0.0",
+  "description": "White Belt — Stellar Journey to Mastery: wallet, balances, first on-chain transactions",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@stellar/stellar-sdk": "^17.0.1"
+  }
+}
