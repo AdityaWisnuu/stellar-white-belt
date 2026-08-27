@@ -24,6 +24,8 @@ const server = new Horizon.Server(HORIZON);
 // ---------- state ----------
 let localWallet = loadLocalWallet(); // { public, secret } | null
 let freighterAddress = null;
+let firstRender = true;
+let displayedBalance = 0;
 
 function loadLocalWallet() {
   try {
@@ -48,7 +50,7 @@ async function fundWithFriendbot(pubkey) {
   const res = await fetch(`https://friendbot.stellar.org?addr=${pubkey}`);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body?.detail || `friendbot gagal (${res.status})`);
+    throw new Error(body?.detail || `friendbot failed (${res.status})`);
   }
 }
 
@@ -77,93 +79,134 @@ async function recentPayments(pubkey) {
     .payments()
     .forAccount(pubkey)
     .order("desc")
-    .limit(5)
+    .limit(6)
     .call();
   return records;
 }
 
 // ---------- UI ----------
 const app = document.querySelector("#app");
+const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+
+function short(addr) {
+  return `${addr.slice(0, 4)}…${addr.slice(-4)}`;
+}
+
+function activeAccount() {
+  return freighterAddress || localWallet?.public || null;
+}
 
 function render() {
+  const active = activeAccount();
   app.innerHTML = `
-    <main>
-      <header>
-        <h1>🥋 Stellar White Belt Wallet</h1>
-        <p>Create wallets, check balances, and submit on-chain transactions on Stellar <strong>testnet</strong>.</p>
+    <div class="wrap ${firstRender ? "reveal" : ""}">
+      <header class="masthead">
+        <p class="kicker">Stellar Dojo · Journey to Mastery · <b>Level 1 — White Belt</b></p>
+        <h1>First<br />Steps 🥋</h1>
+        <div class="beltline" role="presentation"></div>
+        <p class="lede">Forge a wallet, fund it from the faucet, and land your first transactions on the <a href="https://stellar.org" target="_blank" rel="noreferrer">Stellar</a> testnet ledger.</p>
       </header>
 
-      <section class="card">
-        <h2>1 · Local wallet</h2>
-        ${
-          localWallet
-            ? `
-          <p class="addr" title="${localWallet.public}">${short(localWallet.public)}</p>
-          <p>Balance: <strong id="local-balance">loading…</strong></p>
-          <div class="row">
-            <button id="fund">Fund with friendbot</button>
-            <button id="forget" class="ghost">Forget wallet</button>
-          </div>`
-            : `
-          <p>No wallet yet. Generate a fresh Ed25519 keypair — stored only in your browser.</p>
-          <button id="generate">Generate wallet</button>`
-        }
+      <section class="stats" aria-label="Account overview">
+        <div class="stat"><output id="stat-balance">0</output><label>XLM balance</label></div>
+        <div class="stat">
+          <output>${active ? `<a href="${EXPLORER}/account/${active}" target="_blank" rel="noreferrer">${short(active)}</a>` : "—"}</output>
+          <label>active account</label>
+        </div>
+        <div class="stat"><output>testnet</output><label>network</label></div>
       </section>
 
-      <section class="card">
-        <h2>2 · Freighter</h2>
-        ${
-          freighterAddress
-            ? `
-          <p class="addr" title="${freighterAddress}">${short(freighterAddress)}</p>
-          <p>Balance: <strong id="freighter-balance">loading…</strong></p>`
-            : `
-          <p>Connect the Freighter extension (switched to Testnet).</p>
-          <button id="connect">Connect Freighter</button>`
-        }
-      </section>
+      <div class="stage">
+        <div>
+          <section class="panel">
+            <h2>Local wallet</h2>
+            ${
+              localWallet
+                ? `<p class="addr" title="${localWallet.public}">${short(localWallet.public)} <span class="muted small">· in-browser keypair</span></p>
+                   <p class="small" id="local-balance-line">Balance <strong id="local-balance">…</strong></p>
+                   <p style="display:flex;gap:0.6rem;flex-wrap:wrap">
+                     <button id="fund">Fund with friendbot</button>
+                     <button id="forget" class="ghost">Forget wallet</button>
+                   </p>`
+                : `<p class="muted">Generate a fresh Ed25519 keypair — it never leaves your browser.</p>
+                   <button id="generate">Generate wallet</button>`
+            }
+          </section>
 
-      <section class="card">
-        <h2>3 · Send XLM</h2>
-        <form id="send-form">
-          <label>Send from
-            <select id="send-source">
-              ${localWallet ? `<option value="local">Local wallet</option>` : ""}
-              ${freighterAddress ? `<option value="freighter">Freighter</option>` : ""}
-            </select>
-          </label>
-          <label>To (public key G…)
-            <input id="send-dest" required pattern="G[A-Z2-7]{55}" placeholder="GABC…" />
-          </label>
-          <label>Amount (XLM)
-            <input id="send-amount" required type="number" min="0.0000001" step="any" value="10" />
-          </label>
-          <label>Memo (optional)
-            <input id="send-memo" maxlength="28" placeholder="hello from white belt" />
-          </label>
-          <button ${localWallet || freighterAddress ? "" : "disabled"}>Send</button>
-        </form>
-        <p id="send-status"></p>
-      </section>
+          <section class="panel">
+            <h2>Freighter</h2>
+            ${
+              freighterAddress
+                ? `<p class="addr" title="${freighterAddress}">${short(freighterAddress)} <span class="muted small">· Freighter</span></p>
+                   <p class="small">Balance <strong id="freighter-balance">…</strong></p>`
+                : `<p class="muted">Or connect the Freighter extension, switched to testnet.</p>
+                   <button id="connect">Connect Freighter</button>`
+            }
+          </section>
 
-      <section class="card">
-        <h2>Recent activity</h2>
-        <ul id="history"><li>—</li></ul>
-      </section>
-    </main>
+          <section class="panel">
+            <h2>Send XLM</h2>
+            <form id="send-form">
+              <label><span>From</span>
+                <select id="send-source" style="background:var(--ink-2);color:var(--paper);border:1px solid var(--line);padding:0.75rem 0.85rem;font:inherit">
+                  ${localWallet ? `<option value="local">Local wallet</option>` : ""}
+                  ${freighterAddress ? `<option value="freighter">Freighter</option>` : ""}
+                </select>
+              </label>
+              <label><span>To · public key</span>
+                <input id="send-dest" required pattern="G[A-Z2-7]{55}" placeholder="G…" />
+              </label>
+              <label><span>Amount · XLM</span>
+                <input id="send-amount" required type="number" min="0.0000001" step="any" value="10" />
+              </label>
+              <label><span>Memo · optional</span>
+                <input id="send-memo" maxlength="28" placeholder="hello from the dojo" />
+              </label>
+              <button ${localWallet || freighterAddress ? "" : "disabled"}>Send on-chain</button>
+            </form>
+            <p class="status" id="send-status" role="status"></p>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="feedhead"><h2>On-chain activity</h2></div>
+          <ul id="feed"><li class="muted">No account yet — generate a wallet to begin.</li></ul>
+        </section>
+      </div>
+
+      <footer class="belts">
+        <i style="--b:#f2f0e9" class="on"></i>
+        <i style="--b:#ffd42d"></i>
+        <i style="--b:#ff9d2d"></i>
+        <i style="--b:#57d364"></i>
+        <i style="--b:#4aa3ff"></i>
+        <i style="--b:#666"></i>
+        <span>white belt · built by <a href="https://github.com/AdityaWisnuu/stellar-white-belt" style="color:var(--paper)">AdityaWisnuu</a></span>
+      </footer>
+    </div>
   `;
+  firstRender = false;
   wire();
   refresh();
 }
 
-function short(addr) {
-  return `${addr.slice(0, 6)}…${addr.slice(-6)}`;
+function countUp(el, from, to) {
+  const t0 = performance.now();
+  const dur = 700;
+  const tick = (t) => {
+    const p = Math.min((t - t0) / dur, 1);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = fmt.format(from + (to - from) * eased);
+    if (p < 1) requestAnimationFrame(tick);
+    else el.classList.add("lit");
+  };
+  requestAnimationFrame(tick);
 }
 
 function setStatus(msg, isError = false) {
   const el = document.querySelector("#send-status");
   el.innerHTML = msg;
-  el.className = isError ? "error" : "ok";
+  el.className = `status ${isError ? "error" : "ok"}`;
 }
 
 function wire() {
@@ -251,34 +294,47 @@ function wire() {
 }
 
 async function refresh() {
+  const active = activeAccount();
+
   if (localWallet) {
     const el = document.querySelector("#local-balance");
     const bal = await getBalance(localWallet.public).catch(() => null);
-    if (el) el.textContent = bal === null ? "not funded yet" : `${bal} XLM`;
+    if (el) el.textContent = bal === null ? "not funded yet" : `${fmt.format(Number(bal))} XLM`;
+    if (!freighterAddress && bal !== null) updateBalanceStat(Number(bal));
+    if (bal === null) updateBalanceStat(0);
   }
   if (freighterAddress) {
     const el = document.querySelector("#freighter-balance");
     const bal = await getBalance(freighterAddress).catch(() => null);
-    if (el) el.textContent = bal === null ? "not funded yet" : `${bal} XLM`;
+    if (el) el.textContent = bal === null ? "not funded" : `${fmt.format(Number(bal))} XLM`;
+    if (bal !== null) updateBalanceStat(Number(bal));
   }
-  const active = freighterAddress || localWallet?.public;
+
   if (active) {
-    const list = document.querySelector("#history");
+    const list = document.querySelector("#feed");
     try {
       const records = await recentPayments(active);
       list.innerHTML =
         records
           .map((r) => {
-            const amt =
-              r.type === "create_account" ? r.starting_balance : r.amount;
-            const dir = (r.to || r.account) === active ? "⬇️ in" : "⬆️ out";
-            return `<li>${dir} ${amt} XLM — <a href="${EXPLORER}/tx/${r.transaction_hash}" target="_blank" rel="noreferrer">${r.transaction_hash.slice(0, 8)}…</a></li>`;
+            const amt = r.type === "create_account" ? r.starting_balance : r.amount;
+            const dir = (r.to || r.account) === active ? "⬇ in" : "⬆ out";
+            return `<li><span class="amt">${fmt.format(Number(amt))} XLM</span> ${dir}<br />
+              <a class="small" href="${EXPLORER}/tx/${r.transaction_hash}" target="_blank" rel="noreferrer">${r.transaction_hash.slice(0, 8)}… ↗</a></li>`;
           })
-          .join("") || "<li>No transactions yet.</li>";
+          .join("") || `<li class="muted">No transactions yet.</li>`;
     } catch {
-      list.innerHTML = "<li>No transactions yet.</li>";
+      list.innerHTML = `<li class="muted">No transactions yet — fund the wallet first.</li>`;
     }
   }
 }
 
+function updateBalanceStat(value) {
+  const el = document.querySelector("#stat-balance");
+  if (!el || value === displayedBalance) return;
+  countUp(el, displayedBalance, value);
+  displayedBalance = value;
+}
+
 render();
+setInterval(refresh, 12000);
