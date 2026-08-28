@@ -2,6 +2,8 @@
 
 White Belt submission for **Stellar Journey to Mastery: Monthly Builder Challenges** (Rise In × Stellar).
 
+**🌐 Live demo: https://stellar-white-belt.netlify.app** (Stellar testnet)
+
 > Level 1 requirement: *Build wallets, handle balances, and submit your first on-chain transactions on Stellar.*
 
 ## What's inside
